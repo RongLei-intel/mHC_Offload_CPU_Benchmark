@@ -158,7 +158,7 @@ class MHC_Sglang(MHC):
         self.phi_res = SglLinear(n_streams * dim, n_streams * n_streams, bias=False, dtype=data_type)
 
 
-
+@torch.no_grad()
 def sinkhorn_knopp(
     logits: torch.Tensor,
     tmax: int = 20,
@@ -191,3 +191,8 @@ def sinkhorn_knopp(
     if return_dtype is None:
         return_dtype = orig_dtype
     return x.to(return_dtype)
+
+try: 
+    sinkhorn_knopp = torch.compile(sinkhorn_knopp,fullgraph=True)
+except Exception:
+    print("torch.compile failed for sinkhorn_knopp, using uncompiled version.")
