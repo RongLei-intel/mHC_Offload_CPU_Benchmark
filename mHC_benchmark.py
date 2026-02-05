@@ -96,10 +96,10 @@ def run_benchmark(device_name, bsz, seq_len, dim, n_streams, data_type, enable_p
 
     if SGL_AVAILABLE:
         mhc_layer = MHC_Sglang(dim=dim, n_streams=n_streams, data_type=data_type).to(device).eval()
-        print("Using SGL kernel for MHC.")
+        print("Using SGL kernel for mHC.")
     else:
         mhc_layer = MHC(dim=dim, n_streams=n_streams, data_type=data_type).to(device).eval()
-        print("Using standard MHC implementation.")
+        print("Using standard mHC implementation.")
     
     # Initialize CPU tensors
     x_streams = mhc_layer.init_streams(torch.randn(bsz, seq_len, dim, device=device, dtype=data_type))

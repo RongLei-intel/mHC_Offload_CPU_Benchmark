@@ -159,7 +159,7 @@ class MHC_Sglang(MHC):
 
 
 @torch.no_grad()
-def sinkhorn_knopp(
+def _sinkhorn_knopp(
     logits: torch.Tensor,
     tmax: int = 20,
     eps: float = 1e-8,
@@ -193,6 +193,6 @@ def sinkhorn_knopp(
     return x.to(return_dtype)
 
 try: 
-    sinkhorn_knopp = torch.compile(sinkhorn_knopp,fullgraph=True)
+    sinkhorn_knopp = torch.compile(_sinkhorn_knopp,fullgraph=True)
 except Exception:
     print("torch.compile failed for sinkhorn_knopp, using uncompiled version.")
