@@ -12,7 +12,7 @@ from mHC import sinkhorn_knopp
 
 try:
     import sgl_kernel
-    from mhc.mhc import MHC_Sglang
+    from mHC import MHC_Sglang
     SGL_AVAILABLE = True
 except ImportError:
     SGL_AVAILABLE = False
