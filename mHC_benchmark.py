@@ -40,13 +40,14 @@ def benchmark_op(func, name, n_bytes=None, n_iters=5, warmup=1, use_cuda_events=
         avg_time = (time.perf_counter() - start) / n_iters * 1000
 
     bw_info = ""
+    bw_gbps = None
     if n_bytes is not None:
         # BW in GB/s = (Bytes / 1024^3) / (ms / 1000)
         bw_gbps = (n_bytes / (1024**3)) / (avg_time / 1000)
         bw_info = f" | BW: {bw_gbps:.2f} GB/s"
 
     print(f"{name:<35}: {avg_time:.4f} ms{bw_info}")
-    return avg_time
+    return avg_time, bw_gbps
 
 def save_results_to_csv(filename, config, results):
     file_exists = os.path.isfile(filename)
@@ -55,7 +56,7 @@ def save_results_to_csv(filename, config, results):
     # This prevents misalignment when some keys (like data transfer) are missing in one run.
     fieldnames = [
         "Device", "BatchSize", "SeqLen", "Dim", "NumStreams", "Dtype", "SGL_Available",
-        "Case", "Time(ms)"
+        "Case", "Time(ms)", "Size(MB)", "BW(GB/s)"
     ]
     
     with open(filename, mode='a', newline='') as csvfile:
@@ -64,8 +65,8 @@ def save_results_to_csv(filename, config, results):
         if not file_exists:
             writer.writeheader()
         
-        for case_name, time_val in results.items():
-            row_data = {**config, "Case": case_name, "Time(ms)": time_val}
+        for case_name, metrics in results.items():
+            row_data = {**config, "Case": case_name, **metrics}
             writer.writerow(row_data)
     print(f"Results saved to {filename}")
 
@@ -201,34 +202,34 @@ def run_benchmark(device_name, bsz, seq_len, dim, n_streams, data_type, enable_p
     print("------------------ Benchmark Results ----------------")
     with torch.inference_mode():
         if simulate_offload:
-            t = benchmark_op(calc_d2h, "0. D2H Copy (GPU->CPU)", n_bytes=d2h_bytes, use_cuda_events=True)
-            results_info["0. D2H Copy"] = t
+            t, bw = benchmark_op(calc_d2h, "0. D2H Copy (GPU->CPU)", n_bytes=d2h_bytes, use_cuda_events=True)
+            results_info["0. D2H Copy"] = {"Time(ms)": t, "Size(MB)": d2h_bytes / (1024 * 1024), "BW(GB/s)": bw}
             if profiler: profiler.step()
             time.sleep(1)
 
-        t = benchmark_op(calc_linear, "1. H_res Gen (Linear)", use_cuda_events=use_cuda_events)
-        results_info["1. H_res Gen (Linear)"] = t
+        t, _ = benchmark_op(calc_linear, "1. H_res Gen (Linear)", use_cuda_events=use_cuda_events)
+        results_info["1. H_res Gen (Linear)"] = {"Time(ms)": t}
         if profiler: profiler.step()
         time.sleep(1)
 
-        t = benchmark_op(calc_sinkhorn, "2. H_res Gen (Sinkhorn-Knopp)", use_cuda_events=use_cuda_events)
-        results_info["2. H_res Gen (Sinkhorn-Knopp)"] = t
+        t, _ = benchmark_op(calc_sinkhorn, "2. H_res Gen (Sinkhorn-Knopp)", use_cuda_events=use_cuda_events)
+        results_info["2. H_res Gen (Sinkhorn-Knopp)"] = {"Time(ms)": t}
         if profiler: profiler.step()
         time.sleep(1)
 
-        t = benchmark_op(calc_app, "3. h_res App (BMM)", use_cuda_events=use_cuda_events)
-        results_info["3. h_res App (BMM)"] = t
+        t, _ = benchmark_op(calc_app, "3. h_res App (BMM)", use_cuda_events=use_cuda_events)
+        results_info["3. h_res App (BMM)"] = {"Time(ms)": t}
         if profiler: profiler.step()
         time.sleep(1)
 
         if simulate_offload:
-            t = benchmark_op(calc_h2d, "4. H2D Copy (CPU->GPU)", n_bytes=h2d_bytes, use_cuda_events=True)
-            results_info["4. H2D Copy"] = t
+            t, bw = benchmark_op(calc_h2d, "4. H2D Copy (CPU->GPU)", n_bytes=h2d_bytes, use_cuda_events=True)
+            results_info["4. H2D Copy"] = {"Time(ms)": t, "Size(MB)": h2d_bytes / (1024 * 1024), "BW(GB/s)": bw}
             if profiler: profiler.step()
             time.sleep(1)
 
-        t = benchmark_op(calc_total, "5. Total", use_cuda_events=use_cuda_events)
-        results_info["5. Total"] = t
+        t, _ = benchmark_op(calc_total, "5. Total", use_cuda_events=use_cuda_events)
+        results_info["5. Total"] = {"Time(ms)": t}
         if profiler: profiler.step()
         time.sleep(1)
 
