@@ -7,8 +7,8 @@ import csv
 
 sys.path.append(os.path.join(os.getcwd(), 'src'))
 
-from mhc import MHC
-from mhc import sinkhorn_knopp
+from mHC import MHC
+from mHC import sinkhorn_knopp
 
 try:
     import sgl_kernel
