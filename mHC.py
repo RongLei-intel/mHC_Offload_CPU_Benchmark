@@ -76,20 +76,15 @@ class MHC(nn.Module):
 
     def cal_app(self, h_res_matrix, x_streams, SGL_AVAILABLE=False, out=None):
         if SGL_AVAILABLE:
-            bsz, seq_len, n_streams, dim = x_streams.shape
-            x_streams_input = x_streams.reshape(bsz * seq_len, n_streams, dim).permute(0, 2, 1).contiguous()
-            if out is None:
-                out = torch.empty((bsz * seq_len, n_streams, dim), device=x_streams.device, dtype=x_streams.dtype)
-            
-            return torch.ops.sgl_kernel.bmm_cpu(out, h_res_matrix.view(-1, n_streams, n_streams), x_streams_input, True, None)
+            return torch.ops.sgl_kernel.bmm_cpu(out, h_res_matrix.view(-1, self.n_streams, self.n_streams), x_streams, True, None)
         else:
             return torch.einsum("btij,btjc->btic", h_res_matrix, x_streams)
 
 
-    def cal_total(self, x_streams: torch.Tensor, SGL_AVAILABLE=False, out=None) -> torch.Tensor:
+    def cal_total(self, x_streams: torch.Tensor, app_x_streams: torch.Tensor, SGL_AVAILABLE=False, out=None) -> torch.Tensor:
         h_res_logits = self.cal_H_res(x_streams, SGL_AVAILABLE)
         h_res_matrix = self.cal_sinkhorn(h_res_logits)
-        return self.cal_app(h_res_matrix, x_streams, SGL_AVAILABLE, out=out)
+        return self.cal_app(h_res_matrix, app_x_streams, SGL_AVAILABLE, out=out)
 
    
     def _compute_hyper_connections(

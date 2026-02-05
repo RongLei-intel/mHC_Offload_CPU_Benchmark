@@ -17,7 +17,7 @@ try:
 except ImportError:
     SGL_AVAILABLE = False
 
-def benchmark_op(func, name, n_bytes=None, n_iters=10, warmup=3, use_cuda_events=False):
+def benchmark_op(func, name, n_bytes=None, n_iters=5, warmup=1, use_cuda_events=False):
     for _ in range(warmup): _ = func()
 
     if torch.cuda.is_available():
@@ -131,10 +131,10 @@ def run_benchmark(device_name, bsz, seq_len, dim, n_streams, data_type, enable_p
             print(f"  Input {i}: Shape={tuple(inp.shape)}, Device={inp.device}, Dtype={inp.dtype}")
         print(f"  Output : Shape={tuple(output.shape)}, Device={output.device}, Dtype={output.dtype}")
 
-    # 1. H_res Generation (Linear)
+    # 1. H_res Generation (RMSNorm + Linear)
     calc_linear = lambda: mhc_layer.cal_H_res(x_streams, SGL_AVAILABLE)
     with torch.no_grad(): h_res_logits = calc_linear()
-    print_io_info("1. H_res Gen (Linear)", [x_streams], h_res_logits)
+    print_io_info("1. H_res Gen (RMSNorm + Linear)", [x_streams], h_res_logits)
     
     # 2. Sinkhorn
     calc_sinkhorn = lambda: mhc_layer.cal_sinkhorn(h_res_logits)
@@ -142,9 +142,14 @@ def run_benchmark(device_name, bsz, seq_len, dim, n_streams, data_type, enable_p
     print_io_info("2. H_res Gen (Sinkhorn-Knopp)", [h_res_logits], h_res_matrix)
     
     # 3. bmm
-    calc_app = lambda: mhc_layer.cal_app(h_res_matrix, x_streams, SGL_AVAILABLE, out=h_res_output)
+    if SGL_AVAILABLE:
+        app_x_streams = x_streams.clone()
+        app_x_streams = app_x_streams.reshape(bsz * seq_len, n_streams, dim).permute(0, 2, 1).contiguous()
+    else:
+        app_x_streams = x_streams
+    calc_app = lambda: mhc_layer.cal_app(h_res_matrix, app_x_streams, SGL_AVAILABLE, out=h_res_output)
     with torch.no_grad(): app_out = calc_app()
-    print_io_info("3. h_res App (BMM)", [h_res_matrix, x_streams], app_out if app_out else h_res_output)
+    print_io_info("3. h_res App (BMM)", [h_res_matrix, app_x_streams], h_res_output if SGL_AVAILABLE else app_out)
     
     # 4. Total
     if simulate_offload:
@@ -154,7 +159,7 @@ def run_benchmark(device_name, bsz, seq_len, dim, n_streams, data_type, enable_p
             x_streams.copy_(x_streams_gpu, non_blocking=True)
             
             # Compute on CPU
-            mhc_layer.cal_total(x_streams, SGL_AVAILABLE, out=h_res_output)
+            mhc_layer.cal_total(x_streams, app_x_streams, SGL_AVAILABLE, out=h_res_output)
             
             # H2D: CPU (Pinned) -> GPU
             return h_res_output.to("cuda", non_blocking=False)
@@ -165,10 +170,10 @@ def run_benchmark(device_name, bsz, seq_len, dim, n_streams, data_type, enable_p
         torch.cuda.synchronize() 
         print_io_info("4. Total (D2H + CPU Compute + H2D)", [x_streams_gpu], total_out)
     else:
-        calc_total = lambda: mhc_layer.cal_total(x_streams, SGL_AVAILABLE, out=h_res_output)
+        calc_total = lambda: mhc_layer.cal_total(x_streams, app_x_streams, SGL_AVAILABLE, out=h_res_output)
         
         with torch.no_grad(): total_out = calc_total()
-        print_io_info("4. Total", [x_streams], total_out if total_out else h_res_output)
+        print_io_info("4. Total", [x_streams], h_res_output if SGL_AVAILABLE else total_out)
     
     # 0 & 5. D2H and H2D Transfer Lambdas
     calc_d2h = None
@@ -236,7 +241,7 @@ def run_benchmark(device_name, bsz, seq_len, dim, n_streams, data_type, enable_p
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--bs', type=int, default=16, help='Batch size (ignored if --sweep_bs is used)')
-    parser.add_argument('--sweep_bs', action='store_true', help='Sweep batch sizes from 1 to 128 (powers of 2)')
+    parser.add_argument('--sweep_bs', action='store_true', help='Sweep batch sizes from 1 to 16 (powers of 2)')
     parser.add_argument('--seq', type=int, default=4096, help='Sequence length')
     parser.add_argument('--dim', type=int, default=7168, help='Model dimension')
     parser.add_argument('--n_streams', type=int, default=4, help='Number of streams')
@@ -252,7 +257,7 @@ if __name__ == "__main__":
     data_type = dtype_map[args.dtype]
 
     if args.sweep_bs:
-        batch_sizes = [1, 2, 4, 8, 16, 32]
+        batch_sizes = [1, 2, 4, 8, 16]
     else:
         batch_sizes = [args.bs]
 
