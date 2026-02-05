@@ -144,7 +144,7 @@ def run_benchmark(device_name, bsz, seq_len, dim, n_streams, data_type, enable_p
     # 3. bmm
     calc_app = lambda: mhc_layer.cal_app(h_res_matrix, x_streams, SGL_AVAILABLE, out=h_res_output)
     with torch.no_grad(): app_out = calc_app()
-    print_io_info("3. h_res App (BMM)", [h_res_matrix, x_streams], app_out)
+    print_io_info("3. h_res App (BMM)", [h_res_matrix, x_streams], app_out if app_out else h_res_output)
     
     # 4. Total
     if simulate_offload:
@@ -168,7 +168,7 @@ def run_benchmark(device_name, bsz, seq_len, dim, n_streams, data_type, enable_p
         calc_total = lambda: mhc_layer.cal_total(x_streams, SGL_AVAILABLE, out=h_res_output)
         
         with torch.no_grad(): total_out = calc_total()
-        print_io_info("4. Total", [x_streams], total_out)
+        print_io_info("4. Total", [x_streams], total_out if total_out else h_res_output)
     
     # 0 & 5. D2H and H2D Transfer Lambdas
     calc_d2h = None
